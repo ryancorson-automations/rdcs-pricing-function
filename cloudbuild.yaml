@@ -1,0 +1,74 @@
+steps:
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  id: "Set-Gcloud-Project"
+  entrypoint: "gcloud"
+  args:
+  - "config"
+  - "set"
+  - "project"
+  - "instantpriceform"
+
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  id: "Enable-Required-APIs"
+  entrypoint: "gcloud"
+  args:
+  - "services"
+  - "enable"
+  - "cloudfunctions.googleapis.com"
+  - "secretmanager.googleapis.com"
+  - "cloudbuild.googleapis.com"
+  - "iam.googleapis.com"
+
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  id: "Create-Service-Account"
+  entrypoint: "gcloud"
+  args:
+  - "iam"
+  - "service-accounts"
+  - "create"
+  - "instantprice-sa"
+  - "--display-name=instant-price-function-sa"
+
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  id: "Grant-Roles-To-SA"
+  entrypoint: "bash"
+  args:
+  - "-c"
+  - |
+    SA_EMAIL=instantprice-sa@instantpriceform.iam.gserviceaccount.com
+    gcloud projects add-iam-policy-binding instantpriceform --member="serviceAccount:${SA_EMAIL}" --role="roles/logging.logWriter"
+    gcloud projects add-iam-policy-binding instantpriceform --member="serviceAccount:${SA_EMAIL}" --role="roles/secretmanager.secretAccessor"
+
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  id: "Deploy-Pricing-Function"
+  entrypoint: "gcloud"
+  args:
+  - "functions"
+  - "deploy"
+  - "instant-price-calculator"
+  - "--runtime=python311"
+  - "--gen2"
+  - "--trigger-http"
+  - "--entry-point=instant_price_api"
+  - "--region=europe-west1"
+  - "--allow-unauthenticated"
+  - "--service-account=instantprice-sa@instantpriceform.iam.gserviceaccount.com"
+  - "--update-secrets=GOOGLE_GEOCODING_KEY=GOOGLE_GEOCODING_KEY:latest,GOOGLE_STATIC_MAPS_KEY=GOOGLE_STATIC_MAPS_KEY:latest"
+
+- name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  id: "Create-CloudBuild-Trigger"
+  entrypoint: "gcloud"
+  args:
+  - "beta"
+  - "builds"
+  - "triggers"
+  - "create"
+  - "github"
+  - "--name=deploy-instant-price"
+  - "--repo-owner=ryancorson-automations"
+  - "--repo-name=rdcs-pricing-function"
+  - "--branch-pattern=^main$"
+  - "--build-config=cloudbuild.yaml"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
